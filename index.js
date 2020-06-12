@@ -1,17 +1,21 @@
 require('dotenv').config()
+const path = require('path')
 const readline = require('readline')
 const markdown = require( 'markdown' ).markdown
 let mailgun = require('mailgun-js')
 
 const apiKey = process.env.MAILGUN_API_KEY
 
-const ask = async (question) => {
+const ask = async (question, default_input='') => {
+  question = default_input ? `${question} [${default_input}]: ` : `${question}: `
   return new Promise((resolve,reject) => {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout
     })
-    rl.question(question + ': ', (value) => {
+
+    rl.question(question, (value) => {
+      value = value || default_input
       rl.close()
       resolve(value)
     })
@@ -47,8 +51,8 @@ const askMultiline = async (question) => {
       for (let i = 0; i < max; i++) {
         lines.pop()
       }
-      const text = lines.join('\n')
-      const html = markdown.toHTML(text)
+      const text = lines.join('\n') || ' '
+      const html = markdown.toHTML(text) || ' '
       const data = {
         text,
         html,
@@ -61,6 +65,16 @@ const askMultiline = async (question) => {
   })
 }
 
+const askAttachments = async (question, attachments) => {
+  const filepath = await ask(`${question} [${attachments.length} file${attachments.length > 1 ? 's' : ''}]`)
+  if (filepath) {
+    const attachment = path.join(__dirname, filepath.trim())
+    attachments.push(attachment)
+    return askAttachments(question, attachments)
+  }
+  return attachments
+}
+
 const sendMessage = async (data) => {
   return new Promise((resolve,reject) => {
     mailgun.messages().send(data, (error,body) => {
@@ -71,20 +85,27 @@ const sendMessage = async (data) => {
 }
 
 (async () => {
-  const to = await ask('to')
-  const from = await ask('from')
-  const subject = await ask('subject')
-  const body = await askMultiline('body')
+  const to = await ask('to', process.env.DEFAULT_TO)
+  const from = await ask('from', process.env.DEFAULT_FROM)
+  const subject = await ask('subject', process.env.DEFAULT_SUBJECT)
+  const body = await askMultiline('body (markdown)')
+
+  let default_attachments = []
+  if (process.env.DEFAULT_ATTACHMENTS) {
+    default_attachments = process.env.DEFAULT_ATTACHMENTS.split(',')
+  }
+  const attachment = await askAttachments('add attachment (path/to/file)', default_attachments)
 
   const message = {
     to,
     from,
     subject,
     ...body,
+    attachment,
   }
   console.log(message)
 
-  const send = await ask('send email? (y/N)')
+  const send = await ask('send email? [y/N]')
   if (send === 'y') {
     const domain = from.match(/@(.\w+\.\w+)(\W|$)/)[1]
     mailgun = mailgun({
