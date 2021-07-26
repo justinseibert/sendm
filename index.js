@@ -107,7 +107,7 @@ const sendMessage = async (data) => {
 
   const send = await ask('send email? [y/N]')
   if (send === 'y') {
-    const domain = from.match(/@(.\w+\.\w+)(\W|$)/)[1]
+    const domain = process.env.DEFAULT_DOMAIN || from.match(/@(\w+[^>]*)(\W|$)/)[1]
     mailgun = mailgun({
       apiKey,
       domain
